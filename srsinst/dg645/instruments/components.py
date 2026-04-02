@@ -22,6 +22,77 @@ from .keys import Keys
 
 
 # ---------------------------------------------------------------------------
+# DisplayCommand / _DisplayProxy
+#
+# DISP has asymmetric set/query signatures that don't fit any IndexCommand:
+#   Set:   DISP i,c   (display_type first, then channel — value before index)
+#   Query: DISP?      (no parameter at all → returns 'i,c')
+#
+# The descriptor returns a proxy on every attribute access.  The proxy
+# supports subscript-assignment for the set form and tuple-unpacking for
+# the query form:
+#
+#   dg.display.display['A'] = 11       # DISP 11,2
+#   dg.display.display[2]   = 11       # DISP 11,2
+#   disp_type, ch = dg.display.display # DISP? → (11, 2)
+#   repr(dg.display.display)           # DISP? → '11,2'
+# ---------------------------------------------------------------------------
+
+class _DisplayProxy:
+    """Proxy returned by DisplayCommand.__get__.
+
+    Supports subscript-assignment (set) and iteration/unpacking (query).
+    """
+
+    def __init__(self, index_dict, comm):
+        self._index_dict = index_dict
+        self._comm = comm
+
+    def _convert_index(self, channel):
+        if isinstance(channel, int):
+            return channel
+        if isinstance(channel, str):
+            if channel in self._index_dict:
+                return self._index_dict[channel]
+            raise KeyError("Key '{}' not in display channel dict".format(channel))
+        raise TypeError('Channel must be an int or str key')
+
+    def __setitem__(self, channel, display_type):
+        """DISP i,c — set display type i for channel c."""
+        idx = self._convert_index(channel)
+        self._comm.send('DISP {},{}'.format(display_type, idx))
+
+    def __iter__(self):
+        """DISP? — allow tuple unpacking: disp_type, ch = dg.display.display"""
+        reply = self._comm.query_text('DISP?')
+        parts = reply.strip().split(',')
+        yield int(parts[0])
+        yield int(parts[1])
+
+    def __repr__(self):
+        return self._comm.query_text('DISP?').strip()
+
+
+class DisplayCommand:
+    """Class-level descriptor for the DISP command.
+
+    Set:   ``dg.display.display['A'] = 11``  → ``DISP 11,2``
+    Query: ``disp_type, ch = dg.display.display``  → ``DISP?`` → ``(11, 2)``
+    """
+
+    def __init__(self, index_dict=None):
+        self.index_dict = index_dict or {}
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        return _DisplayProxy(self.index_dict, obj.comm)
+
+    def __set__(self, obj, value):
+        raise AttributeError("Use subscript assignment: display['channel'] = display_type")
+
+
+# ---------------------------------------------------------------------------
 # FloatDualIndexCommand — generalizable IndexCommand for DLAY-style commands
 #
 # The DLAY command is asymmetric:
@@ -308,36 +379,30 @@ class Display(Component):
     # SHDP(?) — show/hide the front-panel display (True=on, False=off)
     display_on = BoolCommand('SHDP')
 
-    # Display type dictionary for DISP command
+    # Display type reference (for documentation / user code)
     DisplayTypeDict = {
-        'trigger rate':          0,
-        'trigger threshold':     1,
-        'trigger single shot':   2,
-        'trigger line':          3,
-        'advanced triggering':   4,
-        'trigger holdoff':       5,
-        'prescale config':       6,
-        'burst mode':            7,
-        'burst delay':           8,
-        'burst count':           9,
-        'burst period':          10,
-        'channel delay':         11,
-        'channel output levels': 12,
+        'trigger rate':            0,
+        'trigger threshold':       1,
+        'trigger single shot':     2,
+        'trigger line':            3,
+        'advanced triggering':     4,
+        'trigger holdoff':         5,
+        'prescale config':         6,
+        'burst mode':              7,
+        'burst delay':             8,
+        'burst count':             9,
+        'burst period':            10,
+        'channel delay':           11,
+        'channel output levels':   12,
         'channel output polarity': 13,
-        'burst T0 config':       14,
+        'burst T0 config':         14,
     }
 
-    def get_display_type(self, channel):
-        """DISP?c — query which display type is shown for channel c (0–9)."""
-        return int(self.comm.query_text('DISP? {}'.format(channel)))
-
-    def set_display_type(self, display_type, channel):
-        """DISP i,c — set display type i for channel c.
-
-        Note: DISP uses reversed parameter order (value before index)
-        and cannot be represented by a standard IndexCommand.
-        """
-        self.comm.send('DISP {},{}'.format(display_type, channel))
+    # DISP — display type indexed by channel token or integer
+    #   Set:   dg.display.display['A'] = 11          → DISP 11,2
+    #          dg.display.display[2]   = 11          → DISP 11,2
+    #   Query: disp_type, ch = dg.display.display    → DISP? → (11, 2)
+    display = DisplayCommand(index_dict=Keys.DelayChannelDict)
 
 
 # ---------------------------------------------------------------------------

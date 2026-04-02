@@ -606,20 +606,33 @@ class TestDisplay:
         dg.display.display_on = True
         assert dg.display.display_on is True
 
-    def test_get_display_type_returns_int(self, dg):
-        val = dg.display.get_display_type(0)
-        assert isinstance(val, int)
+    def test_get_display_returns_tuple(self, dg):
+        """dg.display.display unpacks as (display_type, channel_index)."""
+        disp_type, ch = dg.display.display
+        assert isinstance(disp_type, int)
+        assert isinstance(ch, int)
 
-    def test_set_display_type_channel_delay(self, dg):
-        """Display type 11 = 'channel delay'."""
-        dg.display.set_display_type(11, 0)
-        assert dg.display.get_display_type(0) == 11
+    def test_set_display_by_name_channel_delay(self, dg):
+        """dg.display.display['A'] = 11 → DISP 11,2 ('channel delay' for channel A)."""
+        dg.display.display['A'] = 11
+        disp_type, ch = dg.display.display
+        assert disp_type == 11
+        assert ch == Keys.DelayChannelDict['A']
         no_errors(dg)
 
-    def test_set_display_type_trigger_rate(self, dg):
+    def test_set_display_by_integer(self, dg):
+        """dg.display.display[2] = 11 → DISP 11,2 (integer channel index)."""
+        dg.display.display[2] = 11
+        disp_type, ch = dg.display.display
+        assert disp_type == 11
+        assert ch == 2
+        no_errors(dg)
+
+    def test_set_display_trigger_rate(self, dg):
         """Display type 0 = 'trigger rate'."""
-        dg.display.set_display_type(0, 0)
-        assert dg.display.get_display_type(0) == 0
+        dg.display.display['T0'] = 0
+        disp_type, _ = dg.display.display
+        assert disp_type == 0
         no_errors(dg)
 
 

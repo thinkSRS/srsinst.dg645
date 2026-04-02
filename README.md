@@ -39,8 +39,7 @@ dg = DG645('tcpip', '192.168.0.10', 5025)
 # Connect via RS-232
 dg = DG645('serial', 'COM3', 9600)
 
-# Connect via GPIB
-# (needs pyvisa)
+# Connect via GPIB (requires pyvisa)
 dg = DG645('visa', 'GPI0::15::INSTR')
 
 # Set trigger source to internal at 1 kHz
