@@ -666,13 +666,13 @@ class TestInterface:
         """*OPC set form — after all commands complete, OPC bit (bit 0) of ESR is set."""
         dg.interface.clear_status()
         dg.interface.set_opc()
-        esr = dg.status.get_esr()
+        esr = dg.status.event_status
         assert esr & 1 == 1, 'Expected OPC bit (bit 0) set in ESR, got {}'.format(esr)
 
     def test_clear_status(self, dg):
         dg.send('*IDN')  # trigger a CME → sets ESR bit 5
         dg.interface.clear_status()
-        assert dg.status.get_esr() == 0
+        assert dg.status.event_status == 0
 
     def test_wait_does_not_raise(self, dg):
         dg.interface.wait()
@@ -792,47 +792,46 @@ class TestStatus:
         errors = dg.status.drain_errors()
         assert errors == []
 
-    def test_get_esr_zero_after_clear(self, dg):
-        assert dg.status.get_esr() == 0
+    def test_event_status_zero_after_clear(self, dg):
+        assert dg.status.event_status == 0
 
-    def test_get_esr_cme_bit_on_bad_command(self, dg):
+    def test_event_status_cme_bit_on_bad_command(self, dg):
         """A command error sets ESR bit 5 (CME, weight 32)."""
         dg.send('*IDN')  # missing '?' → CME
-        esr = dg.status.get_esr()
+        esr = dg.status.event_status
         assert esr & 32 == 32, 'Expected ESR CME bit set, got {}'.format(esr)
 
-    def test_get_esr_clears_on_read(self, dg):
+    def test_event_status_clears_on_read(self, dg):
         dg.send('*IDN')
-        dg.status.get_esr()    # first read clears it
-        assert dg.status.get_esr() == 0
+        dg.status.event_status      # first read clears it
+        assert dg.status.event_status == 0
 
-    def test_get_esr_bit_specific(self, dg):
-        dg.send('*IDN')        # trigger CME (bit 5)
-        assert dg.status.get_esr(5) == 1
-        assert dg.status.get_esr(5) == 0  # cleared after read
+    def test_event_bit_cme(self, dg):
+        """Per-bit query: event_bit['CME'] reads ESR bit 5."""
+        dg.send('*IDN')             # trigger CME (bit 5)
+        assert dg.status.event_bit[Keys.CME] is True
+        assert dg.status.event_bit[Keys.CME] is False  # cleared after read
 
-    def test_get_status_byte_returns_int(self, dg):
-        stb = dg.status.get_status_byte()
+    def test_serial_poll_returns_int(self, dg):
+        stb = dg.status.serial_poll
         assert isinstance(stb, int)
         assert 0 <= stb <= 255
 
-    def test_get_status_byte_specific_bit(self, dg):
-        bit_val = dg.status.get_status_byte(6)  # MSS bit
-        assert isinstance(bit_val, int)
+    def test_serial_poll_bit_mss(self, dg):
+        bit_val = dg.status.serial_poll_bit[Keys.MSS]
+        assert isinstance(bit_val, bool)
 
-    def test_set_get_sre_bit(self, dg):
-        dg.status.set_sre(5, 1)
-        assert dg.status.get_sre(5) == 1
-        assert dg.status.get_sre() & 32 == 32
-        dg.status.set_sre(5, 0)
-        assert dg.status.get_sre(5) == 0
+    def test_serial_poll_enable_roundtrip(self, dg):
+        dg.status.serial_poll_enable_bit[Keys.ESB] = True
+        assert dg.status.serial_poll_enable & 32 == 32
+        dg.status.serial_poll_enable_bit[Keys.ESB] = False
+        assert dg.status.serial_poll_enable & 32 == 0
 
-    def test_set_get_ese_bit(self, dg):
-        dg.status.set_ese(4, 1)
-        assert dg.status.get_ese(4) == 1
-        assert dg.status.get_ese() & 16 == 16
-        dg.status.set_ese(4, 0)
-        assert dg.status.get_ese(4) == 0
+    def test_event_enable_roundtrip(self, dg):
+        dg.status.event_enable_bit[Keys.EXE] = True
+        assert dg.status.event_enable & 16 == 16
+        dg.status.event_enable_bit[Keys.EXE] = False
+        assert dg.status.event_enable & 16 == 0
 
     def test_get_status_text_ok_when_clean(self, dg):
         text = dg.status.get_status_text()

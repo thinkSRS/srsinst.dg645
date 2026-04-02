@@ -14,6 +14,7 @@ from srsgui.inst.commands import (
 from srsgui.inst.indexcommands import (
     IndexCommand,
     BoolIndexCommand,
+    BoolIndexGetCommand,
     IntIndexCommand,
     FloatIndexCommand,
     DictIndexCommand,
@@ -254,13 +255,7 @@ class System(Component):
 class Status(Component):
     """Status registers, error queue, and human-readable status summary."""
 
-    # INSR? — Instrument Status Register (read clears register)
-    instrument_status = IntGetCommand('INSR')
-
-    # INSE(?) — Instrument Status Enable register
-    instrument_status_enable = IntCommand('INSE')
-
-    # --- Bit dictionaries for get_status_text() ---
+    # --- Bit dictionaries (used by per-bit IndexCommand instances and get_status_text) ---
 
     InsrBitDict = {
         Keys.TRIG:         0,
@@ -283,13 +278,39 @@ class Status(Component):
     }
 
     StbBitDict = {
-        Keys.INSB:     0,
-        Keys.BUSY:     1,
+        Keys.INSB:      0,
+        Keys.BUSY:      1,
         Keys.BURST_BIT: 2,
-        Keys.MAV:      4,
-        Keys.ESB:      5,
-        Keys.MSS:      6,
+        Keys.MAV:       4,
+        Keys.ESB:       5,
+        Keys.MSS:       6,
     }
+
+    # --- Full-register descriptors (class-level) ---
+
+    # INSR? — Instrument Status Register (read clears register)
+    instrument_status        = IntGetCommand('INSR')
+    # INSE(?) — Instrument Status Enable register
+    instrument_status_enable = IntCommand('INSE')
+    # *SRE(?) — Service Request Enable register
+    serial_poll_enable       = IntCommand('*SRE')
+    # *STB? — Status Byte / serial poll register (read-only)
+    serial_poll              = IntGetCommand('*STB')
+    # *ESE(?) — Standard Event Status Enable register
+    event_enable             = IntCommand('*ESE')
+    # *ESR? — Standard Event Status Register (read clears register)
+    event_status             = IntGetCommand('*ESR')
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        # Per-bit descriptors (instance-level, keyed by name token)
+        self.instrument_status_bit        = BoolIndexGetCommand('INSR', 7, 0, Status.InsrBitDict)
+        self.instrument_status_enable_bit = BoolIndexCommand('INSE', 7, 0, Status.InsrBitDict)
+        self.serial_poll_enable_bit       = BoolIndexCommand('*SRE', 7, 0, Status.StbBitDict)
+        self.serial_poll_bit              = BoolIndexGetCommand('*STB', 7, 0, Status.StbBitDict)
+        self.event_enable_bit             = BoolIndexCommand('*ESE', 7, 0, Status.EsrBitDict)
+        self.event_bit                    = BoolIndexGetCommand('*ESR', 7, 0, Status.EsrBitDict)
+        self.add_parent_to_index_commands()
 
     def get_last_error(self):
         """LERR? — read one error code from the queue; returns 0 when queue is empty."""
@@ -305,43 +326,12 @@ class Status(Component):
             errors.append(code)
         return errors
 
-    def get_esr(self, bit=None):
-        """*ESR?[i] — read (and clear) the Standard Event Status Register or a single bit."""
-        if bit is None:
-            return int(self.comm.query_text('*ESR?'))
-        return int(self.comm.query_text('*ESR? {}'.format(bit)))
-
-    def get_status_byte(self, bit=None):
-        """*STB?[i] — read the Status Byte register or a single bit."""
-        if bit is None:
-            return int(self.comm.query_text('*STB?'))
-        return int(self.comm.query_text('*STB? {}'.format(bit)))
-
-    def get_sre(self, bit=None):
-        """*SRE?[i] — read the Service Request Enable register or a single bit."""
-        if bit is None:
-            return int(self.comm.query_text('*SRE?'))
-        return int(self.comm.query_text('*SRE? {}'.format(bit)))
-
-    def set_sre(self, bit, value):
-        """*SRE i,j — set a single bit in the Service Request Enable register."""
-        self.comm.send('*SRE {},{}'.format(bit, int(bool(value))))
-
-    def get_ese(self, bit=None):
-        """*ESE?[i] — read the Standard Event Status Enable register or a single bit."""
-        if bit is None:
-            return int(self.comm.query_text('*ESE?'))
-        return int(self.comm.query_text('*ESE? {}'.format(bit)))
-
-    def set_ese(self, bit, value):
-        """*ESE i,j — set a single bit in the Standard Event Status Enable register."""
-        self.comm.send('*ESE {},{}'.format(bit, int(bool(value))))
-
     def get_status_text(self):
         """Return a human-readable summary of all active status bits and errors.
 
         Returns 'OK' when nothing is set.
-        Note: reading INSR, ESR, and draining LERR? clears those registers/queue.
+        Note: reading instrument_status, event_status, and draining LERR?
+        clears those registers/queue.
         """
         msg = ''
 
@@ -351,7 +341,7 @@ class Status(Component):
                 if 2 ** bit & insr:
                     msg += 'INSR bit {}, {} is set, '.format(bit, key)
 
-        esr = self.get_esr()            # reading clears ESR
+        esr = self.event_status         # reading clears ESR
         if esr:
             for key, bit in self.EsrBitDict.items():
                 if 2 ** bit & esr:
@@ -360,7 +350,7 @@ class Status(Component):
         for code in self.drain_errors():
             msg += 'Error {}, '.format(code)
 
-        stb = self.get_status_byte()
+        stb = self.serial_poll
         if stb:
             for key, bit in self.StbBitDict.items():
                 if 2 ** bit & stb:
