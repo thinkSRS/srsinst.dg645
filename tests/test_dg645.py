@@ -639,7 +639,7 @@ class TestDisplay:
 # ── TestInterface ─────────────────────────────────────────────────────────────
 
 class TestInterface:
-    """Tests for the Interface component — *IDN, *OPC, *CAL, *TST, *CLS, *TRG, *WAI."""
+    """Tests for the Interface component — *IDN, *OPC, *CLS, *TRG, *WAI."""
 
     @pytest.fixture(autouse=True)
     def clean_errors(self, dg):

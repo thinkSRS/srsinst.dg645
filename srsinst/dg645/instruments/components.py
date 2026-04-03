@@ -153,6 +153,61 @@ class _DualIndexProxy:
         yield float(t_str.strip())
 
 
+# ---------------------------------------------------------------------------
+# RegisterBoolIndexGetCommand / RegisterBoolIndexCommand
+#
+# The DG645 does not support bit-indexed register queries or bit-indexed set
+# operations.  Sending '*SRE? 3' or '*SRE 3, 1' (SR860-style) will time out
+# or generate an error.  Instead:
+#
+#   Query: send CMD? (no bit index) → parse full register, extract bit
+#   Set:   read CMD?, flip bit, write CMD <new_bitmask>
+#
+# Both classes inherit IndexCommand (via BoolIndexCommand) so that
+# add_parent_to_index_commands() picks them up automatically.
+# ---------------------------------------------------------------------------
+
+class RegisterBoolIndexGetCommand(BoolIndexGetCommand):
+    """BoolIndexGetCommand for registers that only support full-register queries.
+
+    Overrides __getitem__ to query the full register (CMD?) and extract the
+    requested bit by position, rather than the standard CMD? {index} form.
+
+    Example:
+        event_bit['CME'] → sends '*ESR?' → reads full ESR, extracts bit 5
+    """
+
+    def __getitem__(self, index):
+        converted_index = self._convert_index(index)
+        reply = self._parent.comm.query_text('{}?'.format(self.remote_command)).strip()
+        return bool(int(reply) & (1 << converted_index))
+
+
+class RegisterBoolIndexCommand(RegisterBoolIndexGetCommand):
+    """BoolIndexCommand for registers that use full-register bitmask writes.
+
+    Overrides __setitem__ to do a read-modify-write:
+      1. Query the full register (CMD?)
+      2. Set or clear the bit at the given position
+      3. Write the new bitmask (CMD new_value)
+
+    Example:
+        serial_poll_enable_bit['ESB'] = True
+            → reads '*SRE?' → sets bit 5 → sends '*SRE 32'
+    """
+    _set_enable = True
+
+    def __setitem__(self, index, value):
+        converted_index = self._convert_index(index)
+        reply = self._parent.comm.query_text('{}?'.format(self.remote_command)).strip()
+        current = int(reply)
+        if value:
+            new_value = current | (1 << converted_index)
+        else:
+            new_value = current & ~(1 << converted_index)
+        self._parent.comm.send('{} {}'.format(self.remote_command, new_value))
+
+
 class FloatDualIndexCommand(IndexCommand):
     """IndexCommand subclass for commands with asymmetric set/query syntax.
 
@@ -304,12 +359,14 @@ class Status(Component):
     def __init__(self, parent):
         super().__init__(parent)
         # Per-bit descriptors (instance-level, keyed by name token)
-        self.instrument_status_bit        = BoolIndexGetCommand('INSR', 7, 0, Status.InsrBitDict)
-        self.instrument_status_enable_bit = BoolIndexCommand('INSE', 7, 0, Status.InsrBitDict)
-        self.serial_poll_enable_bit       = BoolIndexCommand('*SRE', 7, 0, Status.StbBitDict)
-        self.serial_poll_bit              = BoolIndexGetCommand('*STB', 7, 0, Status.StbBitDict)
-        self.event_enable_bit             = BoolIndexCommand('*ESE', 7, 0, Status.EsrBitDict)
-        self.event_bit                    = BoolIndexGetCommand('*ESR', 7, 0, Status.EsrBitDict)
+        # Uses RegisterBoolIndex* — DG645 requires full-register read/write;
+        # bit-indexed CMD? n / CMD n,v forms are not supported.
+        self.instrument_status_bit        = RegisterBoolIndexGetCommand('INSR', 7, 0, Status.InsrBitDict)
+        self.instrument_status_enable_bit = RegisterBoolIndexCommand('INSE', 7, 0, Status.InsrBitDict)
+        self.serial_poll_enable_bit       = RegisterBoolIndexCommand('*SRE', 7, 0, Status.StbBitDict)
+        self.serial_poll_bit              = RegisterBoolIndexGetCommand('*STB', 7, 0, Status.StbBitDict)
+        self.event_enable_bit             = RegisterBoolIndexCommand('*ESE', 7, 0, Status.EsrBitDict)
+        self.event_bit                    = RegisterBoolIndexGetCommand('*ESR', 7, 0, Status.EsrBitDict)
         self.add_parent_to_index_commands()
 
     def get_last_error(self):
