@@ -684,21 +684,12 @@ class TestInterface:
         dg.interface.trigger()
         no_errors(dg)
 
-    def test_self_test_returns_int(self, dg):
-        result = dg.interface.self_test
-        assert isinstance(result, int)
-
-    @pytest.mark.skip(reason='*CAL? runs a hardware auto-calibration routine that takes '
-                              'many seconds; skip to avoid timeout cascades in normal runs')
-    def test_calibrate_returns_int(self, dg):
-        result = dg.interface.calibrate
-        assert isinstance(result, int)
 
 
 # ── TestSystem ────────────────────────────────────────────────────────────────
 
 class TestSystem:
-    """Tests for the System component — *PSC, *SAV, *RCL."""
+    """Tests for the System component — *PSC, *SAV, *RCL, *RST, *TST, *CAL."""
 
     @pytest.fixture(autouse=True)
     def clean_errors(self, dg):
@@ -733,6 +724,21 @@ class TestSystem:
         dg.trigger.trigger_source = 'internal'
         dg.system.recall(0)
         assert dg.trigger.trigger_source == Keys.SingleShot
+
+    def test_reset_restores_trigger_source(self, dg):
+        dg.trigger.trigger_source = 'internal'
+        dg.system.reset()
+        assert dg.trigger.trigger_source == Keys.SingleShot
+        no_errors(dg)
+
+    def test_self_test_passes(self, dg):
+        result = dg.system.self_test
+        assert result == 0, 'self_test returned {} (expected 0 = success)'.format(result)
+
+    def test_calibrate_passes(self, dg):
+        """*CAL? blocks until the auto-calibration routine completes (up to 5 min)."""
+        result = int(dg.comm.query_text_with_long_timeout('*CAL?', timeout=300.0))
+        assert result == 0, '*CAL? returned {} (expected 0 = success)'.format(result)
 
 
 # ── TestStatus ────────────────────────────────────────────────────────────────

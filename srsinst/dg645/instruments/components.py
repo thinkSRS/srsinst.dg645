@@ -257,12 +257,6 @@ class Interface(Component):
     # *OPC? — operation complete (query only); also has set form via method
     operation_complete = IntGetCommand('*OPC')
 
-    # *CAL? — run auto calibration; returns 0=success, 17=fail (query only)
-    calibrate = IntGetCommand('*CAL')
-
-    # *TST? — self test; returns 0=success, 16=fail (query only)
-    self_test = IntGetCommand('*TST')
-
     def set_opc(self):
         """*OPC — set form: sets OPC bit in ESR when all commands complete."""
         self.comm.send('*OPC')
@@ -279,20 +273,25 @@ class Interface(Component):
         """*CLS — clear ESR, INSR, and the LERR error queue."""
         self.comm.send('*CLS')
 
-    def reset(self):
-        """*RST — restore factory defaults."""
-        self.comm.send('*RST')
-
-
 # ---------------------------------------------------------------------------
-# Component 2 — System: settings save/recall
+# Component 2 — System: settings save/recall and instrument maintenance
 # ---------------------------------------------------------------------------
 
 class System(Component):
-    """Settings storage and power-on configuration."""
+    """Settings storage, power-on configuration, and instrument maintenance."""
 
     # *PSC(?) — power-on status clear: 0=retain SRE/ESE on power-on, 1=clear
     power_on_status_clear = BoolCommand('*PSC')
+
+    # *CAL? — run auto calibration; returns 0=success, 17=fail (query only)
+    calibrate = IntGetCommand('*CAL')
+
+    # *TST? — self test; returns 0=success, 16=fail (query only)
+    self_test = IntGetCommand('*TST')
+
+    def reset(self):
+        """*RST — restore factory defaults."""
+        self.comm.send('*RST')
 
     def save(self, location):
         """*SAV i — save current settings to non-volatile location i (1–9)."""
