@@ -22,7 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "srsgui>=0.4.5",
-    "python-vxi11",
+    "srsinst.interfaces",
 ]
 dynamic = ["version"]
 

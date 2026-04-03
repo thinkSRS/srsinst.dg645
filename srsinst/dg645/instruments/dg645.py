@@ -7,8 +7,7 @@ from srsgui import Instrument
 from srsgui.inst import TcpipInterface, SerialInterface
 from srsgui.task.inputs import FindListInput, IntegerListInput, Ip4Input, IntegerInput
 
-from .vxi11interface import Vxi11Interface
-from .visainterface import VisaInterface
+from srsinst.interfaces import Vxi11Interface, VisaInterface
 from .components import Interface, System, Status, Display, Trigger, Burst, Delays, Outputs, Network
 
 
